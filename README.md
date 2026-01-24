@@ -2,7 +2,7 @@
 Matlab project with applications for QR-AAA
 
 ## dependencies
-[Matlab version of p-AAA](https://github.com/lbalicki/parametric-AAA)
+[Matlab version of p-AAA](https://github.com/lbalicki/parametric-AAA)\
 [tensor toolbox](https://www.tensortoolbox.org/)
 
 ## installation
