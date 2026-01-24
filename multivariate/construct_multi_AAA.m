@@ -1,0 +1,230 @@
+function [rxy,info] = construct_multi_AAA(pts,F,f,options)
+
+% Function that computes multivariate rational approximation (d-dimensional)
+%
+%
+%
+%
+%       INPUTS      
+%                   pts : 1xd cell array
+%                   F   : N1x...xNd tensor of function values
+%                   options: options for type of rational approx
+%                       options.interp  : final approx interpolatory or not (default true)
+%                       options.sep     : final approx separable or not (default true)
+%                       options.tol_qr  : tol for the initial QR decompositions, can be cell array or single number for all dimensions
+%                       options.tolAAA  : tol for component-wise AAA approximations, can be cell array or single number for all dimensions 
+%                       options.mmax    : max degree, can be cell array or single number for all directions
+%                       options.valpts  : 1xd cell array of grid for construction of non-separable approx
+%                       options.valf    : n1 x ... x nd corresponding function values
+
+
+dim = numel(size(F));
+[interp,twostep,tol_qr,tolAAA,mmax] = parse_opts(options,dim);
+
+if twostep
+    if ~isfield(options,'valpts')
+        validation = false;
+    else
+        validation = true;
+        valpts = options.valpts;
+        Fvalpts = options.Fvalpts;
+    end
+end
+
+dim = size(pts,2);
+
+% init cells
+Qcell = cell(1,dim);
+wcell = cell(1,dim);
+rcell = cell(1,dim);
+Icell = cell(1,dim);
+itpl_part = cell(1,dim);
+rcell = cell(1,dim);
+nodes = cell(1,dim);
+Supp = cell(1,dim);
+info.time_qr = 0;
+info.time_aaa = 0;
+info.rk = cell(1,dim);
+for d=1:dim
+    tic
+    Fd = tenmat(F,d).data;
+    [Q,R,~] = qr(Fd,'econ','vector');
+    dr = abs(diag(R));
+    k = sum(dr>tol_qr{d}*dr(1));
+    Qk = Q(:,1:k);
+    Uk = Qk*diag(dr(1:k));
+    Qcell{d} = Uk;
+    info.time_qr = info.time_qr+toc;
+    info.rk{d} = k;
+    tic
+    [rd, ~, ~, ~, zd, ~, wd, ~] = aaa_sv(Uk,pts{d},'tol',tolAAA{d},'mmax',mmax{d});
+    info.time_aaa = info.time_aaa+toc;
+    Supp{d} = zd;
+    Id = [];
+    for i=1:numel(zd)
+        Id = [Id,find(pts{d}==zd(i))];
+    end
+    Icell{d} = Id;
+    wcell{d} = wd;
+    nodes{d} = pts{d}(Id);
+    if ~interp
+        rcell{d} = rd;
+    end
+end
+info.Supp = Supp;
+
+
+
+
+if interp
+    ff = F(Icell{:});%tensor(f(Xsupp,Ysupp,Zsupp));
+    w = (full(ktensor(1,wcell{:})));
+    rxy = BarycentricForm(nodes,w.*ff,w);
+    if twostep
+        paaapts = cell(1,dim);
+        for d=1:dim
+            paaapts{d} = unique([nodes{d},pts{d}],'stable');
+            itpl_part{d} = 1:numel(nodes{d});
+        end
+        % toggle depending on if function takes cell input or ndgrid input
+        %VALGRID = cell(dim,1);
+        %[VALGRID{:}] = ndgrid(valpts{:});
+        %Fval = f(VALGRID{:});
+        Fpaaa = f(paaapts{:});
+        optionspaaa.itpl_part = itpl_part;
+        optionspaaa.max_iter = 50;
+        if validation
+            optionspaaa.validation.sampling_values = valpts;
+            optionspaaa.validation.samples = Fvalpts.data;
+        end
+        [rxy,infopaaa] = paaa(Fpaaa,paaapts,1e-10,optionspaaa);
+        info.Supp = rxy.itpl_nodes;
+        info.infopaaa = infopaaa;
+    end
+else
+    
+    Core = F;
+    for d=1:dim
+        rd = rcell{d};
+        M = pinv(rd(pts{d}.'),1e-16);
+        Core = ttm(Core,M,d);
+    end
+    rxy.eval = @(p) rat_func(Core,rcell,p);
+end
+
+
+
+end
+
+
+function r = rat_func(Core,rcell,p)
+    dim = size(p,2);
+    r = Core;
+    for d=1:dim
+        rd = rcell{d};
+        M = rd(p{d}.');
+        r = ttm(r,rd(p{d}),d);
+    end
+    r=r.data;
+end
+
+
+function I = ID(T,dim,tol)
+    I = cell(1,dim);
+    for d=1:dim
+        [~,R,piv] = qr((tenmat(T,d).data).','econ','vector');
+        dr = abs(diag(R));
+        k = sum(dr>tol*dr(1));
+        I{d} = piv(1:k);
+    end
+    
+end
+
+
+function r = reval_sv(zz, zj, fj, wj)
+% Evaluate rational function in barycentric form.
+l = length(zz);
+zv = zz(:);                             % vectorize zz if necessary
+CC = 1./(zv-zj.');   % Cauchy matrix
+r = CC*(wj.*fj)./(CC*wj);
+
+% Deal with input inf: r(inf) = lim r(zz) = sum(w.*f) / sum(w):
+r(isinf(zv),:) = kron(ones(sum(isinf(zv)),1),sum(wj.*fj,1)./sum(wj));
+
+% Deal with NaN:
+ii = find(isnan(r));
+if numel(ii)>0
+    [row,col] = ind2sub(size(r),ii);
+    ii = [row,col];
+    ii(ii(:,1) == 0) = l;
+    for jj = 1:size(ii,1)
+        if ( isnan(zv(ii(jj,1))) || ~any(zv(ii(jj,1)) == zj) )
+            disp('REACHED')
+            % r(NaN) = NaN is fine.
+            % The second case may happen if r(zv(ii)) = 0/0 at some point.
+        else
+            % Clean up values NaN = inf/inf at support points.
+            % Find the corresponding node and set entry to correct value:
+            r(ii(jj,1),ii(jj,2)) = fj(zv(ii(jj,1)) == zj,ii(jj,2));
+        end
+    end
+end
+
+% Reshape to input format:
+% r = reshape(r, length(zz),size(fj,2));
+
+end % End of REVAL().
+function [interp,twostep,tol_qr,tolAAA,mmax] = parse_opts(options,dim)
+
+
+if ~isfield(options,'interp')
+    interp=true;
+else
+    interp=options.interp;
+end
+
+if ~isfield(options,'twostep')
+    twostep=false;
+else
+    twostep=options.twostep;
+end
+
+if ~isfield(options,'tol_qr')
+    tol_qr = cell(1,dim);
+    tol_qr(:)={1e-15};
+else
+    if ~iscell(options.tol_qr)
+        tol_qr = cell(1,dim);
+        tol_qr(:) = {options.tol_qr};
+    else
+        tol_qr = options.tol_qr;
+    end
+end
+
+if ~isfield(options,'tolAAA')
+    tolAAA = cell(1,dim);
+    tolAAA(:)={1e-13};
+else
+    if ~iscell(options.tolAAA)
+        tolAAA = cell(1,dim);
+        tolAAA(:) = {options.tolAAA};
+    else
+        tolAAA = options.tolAAA;
+    end
+end
+
+if ~isfield(options,'mmax')
+    mmax = cell(1,dim);
+    mmax(:)={100};
+else
+    if ~iscell(options.mmax)
+        mmax = cell(1,dim);
+        mmax(:) = {options.mmax};
+    else
+        mmax = options.mmax;
+    end
+end
+
+
+
+end
