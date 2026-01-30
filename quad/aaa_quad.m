@@ -1,7 +1,7 @@
 %% AAA_QUAD_sing_log
 % This script tests QR-AAA based quadrature on functions of the form
-% x^alpha+x^beta log(x)
-% for alpha \in (0,30], beta \in [0,1]
+% x^alpha
+% for alpha \in (0,50]
 run init.m
 clear
 clc

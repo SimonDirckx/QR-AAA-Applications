@@ -124,7 +124,7 @@ for m = 1:mmax
     % Solve small least squares problem with H
 
 
-    L = [H(1:m,1:m)];
+    L = [triu(randn(m));H(1:m,1:m)];
 
     [~,SS,V] = svd(L,0);
     ss = diag(SS);

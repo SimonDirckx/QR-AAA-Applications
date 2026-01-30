@@ -5,7 +5,7 @@ clear
 run init.m
 nr = 500;
 nt = 500;
-rmin = 1e-1;%.5; %starting point for strip along the boundary
+rmin = 1e-4;%.5; %starting point for strip along the boundary
 rvec = linspace(rmin,1,nr).';
 nr = numel(rvec);
 th = linspace(-pi,pi,nt).';

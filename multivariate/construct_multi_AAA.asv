@@ -16,10 +16,8 @@ function [rxy,info] = construct_multi_AAA(pts,F,f,options)
 %                               options.mmax    :   max degree, can be cell array or single number for all directions
 %                               options.twostep :   boolean, whether to use
 %                                                   twostep approx
-%                               options.paaapts :   1xd cell array of grid for construction of twostep approx
-%                               options.validation: whether to pass validation points to paaa, used for convergence stats
-%                               options.valpts  :   grid of validation pts
-%                               options.Fvalpts :   corresponding functions values
+%                               options.valpts  :   1xd cell array of grid for construction of twostep approx
+%                               options.valf    :   n1 x ... x nd corresponding function values
 
 
 dim = numel(size(F));
@@ -47,6 +45,7 @@ dim = size(pts,2);
 % init cells
 Qcell = cell(1,dim);
 wcell = cell(1,dim);
+rcell = cell(1,dim);
 Icell = cell(1,dim);
 itpl_part = cell(1,dim);
 rcell = cell(1,dim);
@@ -77,8 +76,14 @@ for d=1:dim
     Icell{d} = Id;
     wcell{d} = wd;
     nodes{d} = pts{d}(Id);
+    if ~interp
+        rcell{d} = rd;
+    end
 end
 info.Supp = Supp;
+
+
+
 
 
 ff = F(Icell{:});
@@ -110,12 +115,70 @@ if twostep
     info.Supp = rxy.itpl_nodes;
     info.infopaaa = infopaaa;
 end
+end
 
 
 
 end
 
 
+function r = rat_func(Core,rcell,p)
+    dim = size(p,2);
+    r = Core;
+    for d=1:dim
+        rd = rcell{d};
+        M = rd(p{d}.');
+        r = ttm(r,rd(p{d}),d);
+    end
+    r=r.data;
+end
+
+
+function I = ID(T,dim,tol)
+    I = cell(1,dim);
+    for d=1:dim
+        [~,R,piv] = qr((tenmat(T,d).data).','econ','vector');
+        dr = abs(diag(R));
+        k = sum(dr>tol*dr(1));
+        I{d} = piv(1:k);
+    end
+    
+end
+
+
+function r = reval_sv(zz, zj, fj, wj)
+% Evaluate rational function in barycentric form.
+l = length(zz);
+zv = zz(:);                             % vectorize zz if necessary
+CC = 1./(zv-zj.');   % Cauchy matrix
+r = CC*(wj.*fj)./(CC*wj);
+
+% Deal with input inf: r(inf) = lim r(zz) = sum(w.*f) / sum(w):
+r(isinf(zv),:) = kron(ones(sum(isinf(zv)),1),sum(wj.*fj,1)./sum(wj));
+
+% Deal with NaN:
+ii = find(isnan(r));
+if numel(ii)>0
+    [row,col] = ind2sub(size(r),ii);
+    ii = [row,col];
+    ii(ii(:,1) == 0) = l;
+    for jj = 1:size(ii,1)
+        if ( isnan(zv(ii(jj,1))) || ~any(zv(ii(jj,1)) == zj) )
+            disp('REACHED')
+            % r(NaN) = NaN is fine.
+            % The second case may happen if r(zv(ii)) = 0/0 at some point.
+        else
+            % Clean up values NaN = inf/inf at support points.
+            % Find the corresponding node and set entry to correct value:
+            r(ii(jj,1),ii(jj,2)) = fj(zv(ii(jj,1)) == zj,ii(jj,2));
+        end
+    end
+end
+
+% Reshape to input format:
+% r = reshape(r, length(zz),size(fj,2));
+
+end % End of REVAL().
 
 function [twostep,tol_qr,tolAAA,mmax] = parse_opts(options,dim)
 

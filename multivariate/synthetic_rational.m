@@ -22,13 +22,12 @@ F = tensor(f(x,y));
 
 %% separable qr-AAA approach, interpolative -> fails!
 clear options
-options.interp=true;
 options.twostep=false;
 options.tolAAA = {1e-13,1e-13};
-options.tol_qr = {1e-15,1e-15};
+options.tolID = {1e-15,1e-15};
 options.valpts = {x,y};
 tic
-[rxy_interp,info_interp] = construct_multi_AAA({x,y},F,f,options);
+[rxy_interp,info_interp] = construct_multi_AAA_ID({x,y},F,f,options);
 toc
 
 %% test separable.
@@ -44,7 +43,6 @@ norm(Finterp(:)-Fexact(:),inf)/norm(Fexact(:),inf)
 
 clear options
 
-options.interp=true;
 options.twostep=true;
 options.tolAAA = {1e-8,1e-5};
 options.mmax = {30,100};
@@ -71,8 +69,11 @@ clear options
 options.max_iter = 100;
 valpts = {logspace(0,4,2*nx)*1i,logspace(-1.5,0,2*ny)};
 Fvalpts = f(valpts{:});
-options.validation.sampling_values = valpts;
-options.validation.samples = Fvalpts;
+
+
+% toggle for convergence information of paaa
+%options.validation.sampling_values = valpts;
+%options.validation.samples = Fvalpts;
 
 tic
 [rxy_pAAA,info_pAAA] = paaa(F.data,{x,y},1e-10,options);

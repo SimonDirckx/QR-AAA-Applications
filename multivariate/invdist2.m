@@ -23,8 +23,6 @@ for powind=1:numel(powvec)
     
     [X,Y,Z] = ndgrid(x,y,z);
     F = tensor(f(X,Y,Z));
-    options.interp=true;
-    options.sep=true;
     options.tolAAA = 1e-11;
     options.tol_qr = 1e-15;
     [rxy_interp,info_interp] = construct_multi_AAA({x,y,z},F,f,options);

@@ -1,5 +1,5 @@
-%% new L-shape script
-% uses qr-aaa and trig interp
+%% L-shape script
+% uses qr-aaa and cheb interp
 
 clear
 run init.m

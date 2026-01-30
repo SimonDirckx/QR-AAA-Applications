@@ -1,4 +1,4 @@
-function [rxy,info] = construct_multi_AAA(pts,F,f,options)
+function [rxy,info] = construct_multi_AAA_ID(pts,F,f,options)
 
 % Function that computes multivariate rational approximation
 %
@@ -11,7 +11,7 @@ function [rxy,info] = construct_multi_AAA(pts,F,f,options)
 %                   f   :       function that can be evaluated at arbitrary
 %                               points (currently needed for twostep approximation)
 %                   options:    options for type of rational approx
-%                               options.tol_qr  :   tol for the initial QR decompositions, can be cell array or single number for all dimensions
+%                               options.tolID   :   tol for the initial ID decompositions, can be cell array or single number for all dimensions
 %                               options.tolAAA  :   tol for component-wise AAA approximations, can be cell array or single number for all dimensions 
 %                               options.mmax    :   max degree, can be cell array or single number for all directions
 %                               options.twostep :   boolean, whether to use
@@ -23,51 +23,37 @@ function [rxy,info] = construct_multi_AAA(pts,F,f,options)
 
 
 dim = numel(size(F));
-
-[twostep,tol_qr,tolAAA,mmax] = parse_opts(options,dim);
-
-if twostep
-    if ~isfield(options,'valpts')
-        validation = false;
-    else
-        validation = true;
-        valpts = options.valpts;
-        Fvalpts = options.Fvalpts;
-    end
-end
-
-if ~isfield(options,'tolpaaa')
-    tolpaaa = 1e-10;
-else
-    tolpaaa = options.tolpaaa;
-end
+[twostep,tolID,tolAAA,mmax] = parse_opts(options,dim);
 
 dim = size(pts,2);
 
 % init cells
-Qcell = cell(1,dim);
 wcell = cell(1,dim);
 Icell = cell(1,dim);
-itpl_part = cell(1,dim);
-rcell = cell(1,dim);
 nodes = cell(1,dim);
 Supp = cell(1,dim);
-info.time_qr = 0;
 info.time_aaa = 0;
 info.rk = cell(1,dim);
+tic
+INDS = ID(F,tolID);
+info.time_ID = toc;
+
+
+toc
+INDSTOT = cell(1,dim);
+for d=1:dim
+    INDSTOT{d} = 1:size(F,d);
+    info.rk{d} = numel(INDS{d});
+end
 for d=1:dim
     tic
-    Fd = tenmat(F,d).data;
-    [Q,R,~] = qr(Fd,'econ','vector');
-    dr = abs(diag(R));
-    k = sum(dr>tol_qr{d}*dr(1));
-    Qk = Q(:,1:k);
-    Uk = Qk*diag(dr(1:k));
-    Qcell{d} = Uk;
-    info.time_qr = info.time_qr+toc;
-    info.rk{d} = k;
+    INDSsub = INDS;
+    INDSsub{d} = INDSTOT{d};
+    Fsub = F(INDSsub{:});
+    Fd = tenmat(Fsub,d).data;
+    %Fd = Fd./vecnorm(Fd,inf,1);%rescale if functions in F are badly scaled
     tic
-    [rd, ~, ~, ~, zd, ~, wd, errvec] = aaa_sv(Uk,pts{d},'tol',tolAAA{d},'mmax',mmax{d});
+    [~, ~, ~, ~, zd, ~, wd, ~] = aaa_sv(Fd,pts{d},'tol',tolAAA{d}*sqrt(size(Fd,2)),'mmax',mmax{d});
     info.time_aaa = info.time_aaa+toc;
     Supp{d} = zd;
     Id = [];
@@ -80,12 +66,13 @@ for d=1:dim
 end
 info.Supp = Supp;
 
-
 ff = F(Icell{:});
 w = (full(ktensor(1,wcell{:})));
 rxy = BarycentricForm(nodes,w.*ff,w);
 if twostep
     paaapts = cell(1,dim);
+    itpl_part = cell(1,dim);
+
     if isfield(options,'paaapts')
         ppts = options.paaapts;
     else
@@ -113,6 +100,25 @@ end
 
 
 
+end
+
+
+function I = ID(T,tol)
+dim = numel(size(T));
+    I = cell(1,dim);
+    Isub = cell(1,dim);
+    for d=1:dim
+        Isub{d} = 1:size(T,d);
+    end
+    for d=1:dim
+        Tsub = T(Isub{:});
+        [~,R,piv] = qr((tenmat(Tsub,d).data).','econ','vector');
+        dr = abs(diag(R));
+        k = sum(dr>tol{d}*dr(1));
+        I{d} = piv(1:k);
+        Isub{d} = piv(1:k);
+    end
+    
 end
 
 
